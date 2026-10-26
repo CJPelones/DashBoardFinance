@@ -1,0 +1,348 @@
+---
+title: "Household Finance Dashboard"
+author: "BSIT 201-D"
+date: "2026-10-23"
+output:
+  flexdashboard::flex_dashboard:
+    orientation: rows
+    vertical_layout: fill
+    theme:
+      version: 4
+      bootswatch: darkly
+---
+
+```{css, echo=FALSE}
+@import url('https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&display=swap');
+
+body, .chart-title, .navbar, table {
+  font-family: 'Poppins', sans-serif !important;
+}
+body { background: #0F172A !important; color: #E2E8F0; }
+
+/* ---------- Navbar ---------- */
+.navbar {
+  background: linear-gradient(120deg, #0B1220 0%, #134E4A 100%) !important;
+  border: none !important;
+  box-shadow: 0 4px 18px rgba(0, 0, 0, 0.55);
+}
+.navbar-brand, .navbar-nav > li > a { color: #F1F5F9 !important; font-weight: 600; }
+.navbar-nav > li > a:hover { background: rgba(255,255,255,0.12) !important; }
+
+/* ---------- Animations ---------- */
+@keyframes fadeUp {
+  from { opacity: 0; transform: translateY(24px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+@keyframes popIn {
+  0%   { opacity: 0; transform: scale(0.85); }
+  70%  { transform: scale(1.04); }
+  100% { opacity: 1; transform: scale(1); }
+}
+
+/* ---------- Value boxes ---------- */
+.value-box {
+  border-radius: 16px !important;
+  box-shadow: 0 8px 22px rgba(0, 0, 0, 0.5);
+  animation: popIn 0.7s ease both;
+  transition: transform 0.25s ease, box-shadow 0.25s ease;
+}
+.value-box:hover {
+  transform: translateY(-6px);
+  box-shadow: 0 14px 30px rgba(42, 157, 143, 0.35);
+}
+.value-box .value { font-weight: 700; letter-spacing: 0.5px; }
+.value-box .caption { opacity: 0.92; font-weight: 500; }
+
+/* ---------- Chart cards ---------- */
+.chart-wrapper {
+  background: #1E293B;
+  border: 1px solid rgba(148, 163, 184, 0.15) !important;
+  border-radius: 16px !important;
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.45);
+  animation: fadeUp 0.9s ease both;
+  transition: transform 0.25s ease, box-shadow 0.25s ease, border-color 0.25s ease;
+  overflow: hidden;
+}
+.chart-wrapper:hover {
+  transform: translateY(-4px);
+  border-color: rgba(42, 157, 143, 0.6) !important;
+  box-shadow: 0 12px 32px rgba(42, 157, 143, 0.25);
+}
+.chart-title {
+  background: linear-gradient(90deg, #1E293B, #26364D);
+  color: #F1F5F9 !important;
+  font-weight: 600;
+  border-bottom: 3px solid #2A9D8F !important;
+}
+
+/* ---------- Tables ---------- */
+table { border-radius: 12px; overflow: hidden; color: #E2E8F0 !important; }
+table thead th { background: #0F766E; color: #ffffff; text-align: center; }
+table tbody tr { background: #1E293B; }
+table tbody tr:nth-child(even) { background: #26364D; }
+table tbody tr:hover { background: #2F4A5E; transition: background 0.2s; }
+table td, table th { border-color: rgba(148, 163, 184, 0.2) !important; }
+```
+
+```{r setup, include=FALSE}
+library(tidyverse)
+library(readxl)
+library(knitr)
+library(flexdashboard)
+library(plotly)
+library(htmlwidgets)
+
+knitr::opts_chunk$set(echo = FALSE, message = FALSE, warning = FALSE)
+
+# ---- Load data (keep the .xlsx files in the same folder as this .Rmd) ----
+households          <- read_excel("households.xlsx")
+debt                <- read_excel("debt.xlsx")
+education           <- read_excel("education.xlsx")
+emergency_fund      <- read_excel("emergency_fund.xlsx")
+financial_wellbeing <- read_excel("financial_wellbeing.xlsx")
+food                <- read_excel("food.xlsx")
+income              <- read_excel("income.xlsx")
+savings             <- read_excel("savings.xlsx")
+transport           <- read_excel("transport.xlsx")
+utilities           <- read_excel("utilities.xlsx")
+
+# ---- Join everything by household_id ----
+Households_analysis <- households %>%
+  left_join(debt, by = "household_id") %>%
+  left_join(education, by = "household_id") %>%
+  left_join(emergency_fund, by = "household_id") %>%
+  left_join(financial_wellbeing, by = "household_id") %>%
+  left_join(food, by = "household_id") %>%
+  left_join(income, by = "household_id") %>%
+  left_join(savings, by = "household_id") %>%
+  left_join(transport, by = "household_id") %>%
+  left_join(utilities, by = "household_id") %>%
+  mutate(income_group = factor(income_group, levels = c("Low", "Middle", "High")))
+
+# ---- Dark theme colors ----
+txt_col  <- "#E2E8F0"   # main text
+grid_col <- "rgba(148,163,184,0.18)"   # grid lines
+card_col <- "#1E293B"   # card background
+
+# ---- Shared palette and plot styling ----
+pal <- c(Low = "#F26B4B", Middle = "#F5B83D", High = "#34C3B3")
+
+style_plot <- function(p) {
+  p %>%
+    layout(paper_bgcolor = "rgba(0,0,0,0)",
+           plot_bgcolor  = "rgba(0,0,0,0)",
+           font = list(family = "Poppins, sans-serif", color = txt_col),
+           xaxis = list(gridcolor = grid_col, zerolinecolor = grid_col, linecolor = grid_col),
+           yaxis = list(gridcolor = grid_col, zerolinecolor = grid_col, linecolor = grid_col),
+           legend = list(orientation = "h", x = 0.5, xanchor = "center", y = -0.2,
+                         font = list(color = txt_col))) %>%
+    config(displayModeBar = FALSE)
+}
+```
+
+```{r count-up-js, results='asis'}
+# Animates the value boxes: numbers count up when the dashboard loads
+cat('
+<script>
+window.addEventListener("load", function () {
+  function countUp(el) {
+    var txt = el.textContent.trim();
+    var m = txt.match(/^([^\\d-]*)([\\d,]*\\.?\\d+)(.*)$/);
+    if (!m) return;
+    var prefix = m[1], numStr = m[2], suffix = m[3];
+    var decimals = (numStr.split(".")[1] || "").length;
+    var hasComma = numStr.indexOf(",") > -1;
+    var target = parseFloat(numStr.replace(/,/g, ""));
+    var start = null, dur = 1500;
+    function fmt(v) {
+      var s = v.toFixed(decimals);
+      if (hasComma) {
+        var p = s.split(".");
+        p[0] = p[0].replace(/\\B(?=(\\d{3})+(?!\\d))/g, ",");
+        s = p.join(".");
+      }
+      return prefix + s + suffix;
+    }
+    function step(ts) {
+      if (!start) start = ts;
+      var p = Math.min((ts - start) / dur, 1);
+      var e = 1 - Math.pow(1 - p, 3);
+      el.textContent = fmt(target * e);
+      if (p < 1) { requestAnimationFrame(step); } else { el.textContent = txt; }
+    }
+    requestAnimationFrame(step);
+  }
+  document.querySelectorAll(".value-box .value").forEach(countUp);
+});
+</script>
+')
+```
+
+Overview
+=======================================================================
+
+Row {data-height=140}
+-----------------------------------------------------------------------
+
+### Households
+
+```{r}
+valueBox(nrow(Households_analysis), icon = "fa-home", color = "#3D5A99")
+```
+
+### Avg. Monthly Income
+
+```{r}
+valueBox(scales::comma(round(mean(Households_analysis$monthly_income, na.rm = TRUE))),
+         icon = "fa-money-bill-wave", color = "#1F8A7E")
+```
+
+### Avg. Savings Rate
+
+```{r}
+valueBox(scales::percent(mean(Households_analysis$savings_rate, na.rm = TRUE), accuracy = 0.1),
+         icon = "fa-piggy-bank", color = "#2F6FDE")
+```
+
+### Avg. Debt Ratio
+
+```{r}
+valueBox(round(mean(Households_analysis$debt_ratio, na.rm = TRUE), 2),
+         icon = "fa-credit-card", color = "#D89A0B")
+```
+
+### Avg. Financial Stress
+
+```{r}
+valueBox(round(mean(Households_analysis$financial_stress, na.rm = TRUE), 2),
+         icon = "fa-heartbeat", color = "#D4472A")
+```
+
+Row
+-----------------------------------------------------------------------
+
+### Households by Income Group (Pie Chart)
+
+```{r}
+pie_data <- Households_analysis %>% count(income_group)
+
+plot_ly(pie_data,
+        labels = ~income_group, values = ~n, type = "pie",
+        sort = FALSE, direction = "clockwise", rotation = 90,
+        textinfo = "label+percent", textposition = "inside",
+        insidetextfont = list(color = "#0F172A", size = 14),
+        marker = list(colors = unname(pal[as.character(pie_data$income_group)]),
+                      line = list(color = card_col, width = 3)),
+        hovertemplate = "%{label}<br>%{value} households (%{percent})<extra></extra>") %>%
+  layout(showlegend = FALSE) %>%
+  style_plot()
+```
+
+### Monthly Income vs. Food Spending (press Play)
+
+```{r}
+groups <- levels(Households_analysis$income_group)
+frame_labels <- c("1. Low income", "2. + Middle income", "3. + High income")
+
+# Each frame reveals one more income group; hidden groups are set to NA
+scatter_anim <- map_dfr(seq_along(groups), function(k) {
+  Households_analysis %>%
+    mutate(frame = factor(frame_labels[k], levels = frame_labels),
+           x = ifelse(as.integer(income_group) <= k, monthly_income, NA_real_),
+           y = ifelse(as.integer(income_group) <= k, food_spending, NA_real_))
+})
+
+plot_ly(scatter_anim, x = ~x, y = ~y, color = ~income_group, colors = pal,
+        frame = ~frame, type = "scatter", mode = "markers",
+        marker = list(size = 10, opacity = 0.85, line = list(color = card_col, width = 1)),
+        hovertemplate = "Income: %{x:,.0f}<br>Food: %{y:,.0f}<extra></extra>") %>%
+  layout(margin = list(l = 70, r = 40, b = 110),
+         xaxis = list(title = "Monthly Income", tickformat = ",", range = c(0, max(Households_analysis$monthly_income) * 1.05)),
+         yaxis = list(title = "Food Spending", tickformat = ",", range = c(0, max(Households_analysis$food_spending) * 1.05))) %>%
+  animation_opts(frame = 1200, transition = 600, redraw = FALSE) %>%
+  animation_slider(x = 0.14, len = 0.72,
+                   bgcolor = "#334155", activebgcolor = "#2A9D8F",
+                   bordercolor = "#475569", tickcolor = "#94A3B8",
+                   font = list(size = 11, color = txt_col),
+                   currentvalue = list(prefix = "Showing: ", xanchor = "right",
+                                       font = list(size = 13, color = txt_col))) %>%
+  animation_button(label = "Play", x = 0, xanchor = "left", y = -0.05, yanchor = "top",
+                   bgcolor = "#334155", bordercolor = "#475569",
+                   font = list(color = txt_col)) %>%
+  style_plot()
+```
+
+Row
+-----------------------------------------------------------------------
+
+### Financial Stress by Income Group
+
+```{r}
+plot_ly(Households_analysis,
+        x = ~income_group, y = ~financial_stress,
+        color = ~income_group, colors = pal, type = "box",
+        boxpoints = "all", jitter = 0.4, pointpos = 0,
+        marker = list(opacity = 0.6)) %>%
+  layout(showlegend = FALSE,
+         xaxis = list(title = "Income Group"),
+         yaxis = list(title = "Financial Stress Score")) %>%
+  style_plot()
+```
+
+### Average Spending by Category (auto-plays)
+
+```{r}
+bar_base <- Households_analysis %>%
+  summarise(Food = mean(food_spending, na.rm = TRUE),
+            Transport = mean(transport_spending, na.rm = TRUE),
+            Education = mean(education_spending, na.rm = TRUE),
+            Training = mean(training_spending, na.rm = TRUE)) %>%
+  pivot_longer(everything(), names_to = "category", values_to = "avg") %>%
+  arrange(avg) %>%
+  mutate(category = factor(category, levels = category))
+
+# Bars "grow" from 0 to their final value
+bar_anim <- crossing(bar_base, step = seq(0, 1, length.out = 21)) %>%
+  mutate(value = avg * step, frame = round(step * 100))
+
+plot_ly(bar_anim, x = ~value, y = ~category, frame = ~frame,
+        type = "bar", orientation = "h",
+        marker = list(color = "#34C3B3"),
+        hovertemplate = "%{y}: %{x:,.0f}<extra></extra>") %>%
+  layout(xaxis = list(title = "Average Spending", tickformat = ",",
+                      range = c(0, max(bar_base$avg) * 1.1)),
+         yaxis = list(title = "")) %>%
+  animation_opts(frame = 60, transition = 0, redraw = TRUE) %>%
+  animation_slider(hide = TRUE) %>%
+  animation_button(label = "Replay", x = 1, xanchor = "right", y = 0, yanchor = "bottom",
+                   bgcolor = "#334155", bordercolor = "#475569",
+                   font = list(color = txt_col)) %>%
+  style_plot() %>%
+  onRender("function(el) {
+    setTimeout(function() {
+      Plotly.animate(el, null, {frame: {duration: 60, redraw: true},
+                                transition: {duration: 0}, fromcurrent: false});
+    }, 600);
+  }")
+```
+
+Data Summary
+=======================================================================
+
+Row
+-----------------------------------------------------------------------
+
+### Average Values by Income Group
+
+```{r}
+Households_analysis %>%
+  group_by(`Income Group` = income_group) %>%
+  summarise(Households = n(),
+            `Avg Income` = round(mean(monthly_income, na.rm = TRUE)),
+            `Avg Food` = round(mean(food_spending, na.rm = TRUE)),
+            `Avg Transport` = round(mean(transport_spending, na.rm = TRUE)),
+            `Avg Savings Rate` = round(mean(savings_rate, na.rm = TRUE), 3),
+            `Avg Debt Ratio` = round(mean(debt_ratio, na.rm = TRUE), 3),
+            `Avg Stress` = round(mean(financial_stress, na.rm = TRUE), 2)) %>%
+  kable(format.args = list(big.mark = ","))
+```
